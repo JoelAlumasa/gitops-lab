@@ -1,783 +1,418 @@
-# Secure CI/CD Pipeline with ECS
+# Gitleaks
 
-A security-hardened Jenkins pipeline deploying a Node.js application to AWS ECS Fargate with integrated SAST, SCA, container scanning, SBOM generation, and automated rollback.
+```
+┌─○───┐
+│ │╲  │
+│ │ ○ │
+│ ○ ░ │
+└─░───┘
+```
 
----
+<p align="left">
+  <p align="left">
+	  <a href="https://github.com/zricethezav/gitleaks/actions/workflows/test.yml">
+		  <img alt="Github Test" src="https://github.com/zricethezav/gitleaks/actions/workflows/test.yml/badge.svg">
+	  </a>
+	  <a href="https://hub.docker.com/r/zricethezav/gitleaks">
+		  <img src="https://img.shields.io/docker/pulls/zricethezav/gitleaks.svg" />
+	  </a>
+	  <a href="https://github.com/zricethezav/gitleaks-action">
+        	<img alt="gitleaks badge" src="https://img.shields.io/badge/protected%20by-gitleaks-blue">
+    	 </a>
+	  <a href="https://twitter.com/intent/follow?screen_name=zricethezav">
+		  <img src="https://img.shields.io/twitter/follow/zricethezav?label=Follow%20zricethezav&style=social&color=blue" alt="Follow @zricethezav" />
+	  </a>
+  </p>
+</p>
 
-##  Project Screenshots
+### Join our Discord! [![Discord](https://img.shields.io/discord/1102689410522284044.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/sydS6AHTUP)
 
-### Jenkins Pipeline execution
+Gitleaks is a SAST tool for **detecting** and **preventing** hardcoded secrets like passwords, api keys, and tokens in git repos. Gitleaks is an **easy-to-use, all-in-one solution** for detecting secrets, past or present, in your code.
 
-![Jenkins Pipeline - Build & Scan](screenshoots/jenkinsfirststages.png)
-![Jenkins Pipeline - Security & Deploy](screenshoots/jenkinlaststages.png)
+```
+➜  ~/code(master) gitleaks detect --source . -v
 
-### SonarQube Code Quality Analysis
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
 
-![SonarQube Dashboard](screenshoots/sonarqube.png)
 
-### Security Reports & Dashboard
+Finding:     "export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=cafebabe:deadbeef",
+Secret:      cafebabe:deadbeef
+RuleID:      sidekiq-secret
+Entropy:     2.609850
+File:        cmd/generate/config/rules/sidekiq.go
+Line:        23
+Commit:      cd5226711335c68be1e720b318b7bc3135a30eb2
+Author:      John
+Email:       john@users.noreply.github.com
+Date:        2022-08-03T12:31:40Z
+Fingerprint: cd5226711335c68be1e720b318b7bc3135a30eb2:cmd/generate/config/rules/sidekiq.go:sidekiq-secret:23
+```
 
-![Snyk Vulnerability Scan](screenshoots/snyk.png)
-![Security Artifacts](screenshoots/artifacts.png)
+## Getting Started
 
----
+Gitleaks can be installed using Homebrew, Docker, or Go. Gitleaks is also available in binary form for many popular platforms and OS types on the [releases page](https://github.com/zricethezav/gitleaks/releases). In addition, Gitleaks can be implemented as a pre-commit hook directly in your repo or as a GitHub action using [Gitleaks-Action](https://github.com/gitleaks/gitleaks-action).
 
-##  Table of Contents
-
-0. [Project Screenshots](#-project-screenshots)
-1. [Quick Start](#-quick-start)
-2. [Prerequisites](#-prerequisites)
-3. [All Required Credentials](#-all-required-credentials)
-4. [Step-by-Step Setup](#-step-by-step-setup)
-5. [Running the Pipeline](#-running-the-pipeline)
-6. [Testing the Application](#-testing-the-application)
-7. [Security Gate Testing](#-security-gate-testing)
-8. [Troubleshooting](#-troubleshooting)
-9. [Cleanup](#-cleanup)
-
----
-
-##  Quick Start
+### Installing
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/viateur-amalitech/jenkins-pipeline.git
-cd jenkins-pipeline
+# MacOS
+brew install gitleaks
 
-# 2. Configure AWS credentials
-aws configure
+# Docker (DockerHub)
+docker pull zricethezav/gitleaks:latest
+docker run -v ${path_to_host_folder_to_scan}:/path zricethezav/gitleaks:latest [COMMAND] --source="/path" [OPTIONS]
 
-# 3. Setup Terraform backend
-./scripts/setup-backend.sh
+# Docker (ghcr.io)
+docker pull ghcr.io/gitleaks/gitleaks:latest
+docker run -v ${path_to_host_folder_to_scan}:/path ghcr.io/gitleaks/gitleaks:latest [COMMAND] --source="/path" [OPTIONS]
 
-# 4. Deploy infrastructure
-./scripts/deploy-infrastructure.sh --environment dev --auto-approve
-
-# 5. Configure Jenkins with credentials (see below)
-# 6. Run the pipeline
+# From Source
+git clone https://github.com/gitleaks/gitleaks.git
+cd gitleaks
+make build
 ```
 
----
+### GitHub Action
 
-##  Prerequisites
-
-### Local Machine Requirements
-
-| Tool | Version | Installation |
-|------|---------|-------------|
-| AWS CLI | v2.x | `curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install` |
-| Terraform | >= 1.0.0 | `wget https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip && unzip terraform_1.6.0_linux_amd64.zip && sudo mv terraform /usr/local/bin/` |
-| jq | latest | `sudo apt-get install -y jq` |
-| Git | latest | `sudo apt-get install -y git` |
-
-### Jenkins Server Requirements
-
-| Tool | Version | Installation Command |
-|------|---------|---------------------|
-| Docker | latest | `sudo apt-get install -y docker.io && sudo usermod -aG docker jenkins` |
-| Node.js | 18.x | `curl -fsSL https://deb.nodesource.com/setup_18.x \| sudo -E bash - && sudo apt-get install -y nodejs` |
-| AWS CLI | v2.x | `sudo apt-get install -y awscli` |
-| Gitleaks | 8.18.0 | `wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz && tar -xzf gitleaks_8.18.0_linux_x64.tar.gz && sudo mv gitleaks /usr/local/bin/` |
-| Trivy | latest | See installation script below |
-| Syft | latest | `curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \| sudo sh -s -- -b /usr/local/bin` |
-| Snyk | latest | `sudo npm install -g snyk` |
-| SonarScanner | 5.x | See installation script below |
-
-<details>
-<summary> Jenkins Agent Setup Script (Click to expand)</summary>
-
-```bash
-#!/bin/bash
-# Run this script on your Jenkins server/agent
-
-# Update system
-sudo apt-get update
-
-# Install Docker
-sudo apt-get install -y docker.io
-sudo usermod -aG docker jenkins
-sudo systemctl enable docker
-sudo systemctl start docker
-
-# Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Install AWS CLI
-sudo apt-get install -y awscli
-
-# Install Gitleaks
-wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
-tar -xzf gitleaks_8.18.0_linux_x64.tar.gz
-sudo mv gitleaks /usr/local/bin/
-rm gitleaks_8.18.0_linux_x64.tar.gz
-
-# Install Trivy
-sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-sudo apt-get update
-sudo apt-get install -y trivy
-
-# Install Syft
-curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
-
-# Install Snyk
-sudo npm install -g snyk
-
-# Install SonarQube Scanner
-wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-unzip sonar-scanner-cli-5.0.1.3006-linux.zip
-sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
-sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
-rm sonar-scanner-cli-5.0.1.3006-linux.zip
-
-# Restart Jenkins to apply Docker group
-sudo systemctl restart jenkins
-
-echo "✅ All tools installed successfully!"
-echo "Run these commands to verify:"
-echo "  docker --version"
-echo "  node --version"
-echo "  aws --version"
-echo "  gitleaks version"
-echo "  trivy --version"
-echo "  syft --version"
-echo "  snyk --version"
-echo "  sonar-scanner --version"
-```
-</details>
-
----
-
-##  All Required Credentials
-
-### Overview Table
-
-| Credential | Type | Where to Store | How to Obtain |
-|------------|------|----------------|---------------|
-| AWS Access Key ID | String | Jenkins, Local | AWS IAM Console |
-| AWS Secret Access Key | String | Jenkins, Local | AWS IAM Console |
-| SonarQube URL | URL | Jenkins | Your SonarQube server |
-| SonarQube Token | Token | Jenkins | SonarQube UI |
-| Snyk Token | Token | Jenkins | snyk.io account |
-
----
-
-### 1️ AWS Credentials
-
-**What it's for:** Deploying infrastructure, pushing to ECR, deploying to ECS
-
-**Where to get it:**
-1. Go to [AWS IAM Console](https://console.aws.amazon.com/iam/)
-2. Click **Users** → **Add User**
-3. Username: `jenkins-cicd`
-4. Select **Programmatic access**
-5. Attach policies:
-   - `AmazonECS_FullAccess`
-   - `AmazonEC2ContainerRegistryFullAccess`
-   - `AmazonVPCFullAccess`
-   - `IAMFullAccess`
-   - `AmazonS3FullAccess`
-   - `AmazonDynamoDBFullAccess`
-   - `CloudWatchLogsFullAccess`
-   - `ElasticLoadBalancingFullAccess`
-6. Click **Create User**
-7. **Save the Access Key ID and Secret Access Key**
-
-**Where to put it:**
-
- **Local Machine** (for Terraform):
-```bash
-aws configure
-# AWS Access Key ID: AKIAXXXXXXXXXXXXXXXX
-# AWS Secret Access Key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# Default region: eu-north-1
-# Default output: json
-```
-
- **Jenkins** (for pipeline):
-1. Go to **Manage Jenkins** → **Credentials** → **System** → **Global credentials**
-2. Click **Add Credentials**
-3. Fill in:
-   - **Kind:** Username with password
-   - **Scope:** Global
-   - **Username:** `AKIAXXXXXXXXXXXXXXXX` (your Access Key ID)
-   - **Password:** `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` (your Secret Access Key)
-   - **ID:** `aws-credentials`
-   - **Description:** AWS credentials for CI/CD
-
----
-
-### 2️ SonarQube Credentials
-
-**What it's for:** Static Application Security Testing (SAST), code quality analysis
-
-**Option A: SonarCloud (Free - Recommended for testing)**
-
-1. Go to [https://sonarcloud.io](https://sonarcloud.io)
-2. Click **Log in** → Sign in with GitHub
-3. Click **+** → **Analyze new project**
-4. Select your repository
-5. Get the token:
-   - Click your avatar → **My Account** → **Security**
-   - Generate token: `jenkins-pipeline-token`
-   - **Copy the token** (shown only once!)
-6. Get the organization key from your organization settings
-
-**URL:** `https://sonarcloud.io`
-**Token:** `sqp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-
-**Option B: Self-hosted SonarQube**
-
-```bash
-# Run SonarQube locally with Docker
-docker run -d --name sonarqube \
-  -p 9000:9000 \
-  -v sonarqube_data:/opt/sonarqube/data \
-  -v sonarqube_logs:/opt/sonarqube/logs \
-  sonarqube:lts-community
-
-# Wait for startup (takes ~2 minutes)
-sleep 120
-
-# Access: http://localhost:9000
-# Default login: admin / admin (change on first login)
-```
-
-Generate token in SonarQube:
-1. Login to SonarQube
-2. Go to **Administration** → **Security** → **Users**
-3. Click on your user → **Tokens**
-4. Generate: `jenkins-token`
-5. **Copy the token**
-
-**URL:** `http://your-server:9000`
-**Token:** `squ_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-
-**Where to put it in Jenkins:**
-
-📍 **SonarQube URL:**
-1. **Manage Jenkins** → **Credentials** → **Add Credentials**
-2. Fill in:
-   - **Kind:** Secret text
-   - **Scope:** Global
-   - **Secret:** `https://sonarcloud.io` (or your server URL)
-   - **ID:** `sonarqube-url`
-   - **Description:** SonarQube Server URL
-
-📍 **SonarQube Token:**
-1. **Manage Jenkins** → **Credentials** → **Add Credentials**
-2. Fill in:
-   - **Kind:** Secret text
-   - **Scope:** Global
-   - **Secret:** `sqp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
-   - **ID:** `sonarqube-token`
-   - **Description:** SonarQube Authentication Token
-
- **Configure SonarQube Server in Jenkins:**
-1. **Manage Jenkins** → **Configure System**
-2. Scroll to **SonarQube servers**
-3. Check **Environment variables**
-4. Click **Add SonarQube**
-5. Fill in:
-   - **Name:** `SonarQube`
-   - **Server URL:** `https://sonarcloud.io`
-   - **Server authentication token:** Select `sonarqube-token`
-
----
-
-### 3️ Snyk Credentials
-
-**What it's for:** Software Composition Analysis (SCA), dependency vulnerability scanning
-
-**How to get it:**
-1. Go to [https://snyk.io](https://snyk.io)
-2. Click **Sign up** → Sign up with GitHub
-3. After login, click your name (bottom left) → **Account Settings**
-4. Scroll to **API Token**
-5. Click **click to show** or **Regenerate**
-6. **Copy the token**
-
-**Token format:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-
-**Where to put it in Jenkins:**
-1. **Manage Jenkins** → **Credentials** → **Add Credentials**
-2. Fill in:
-   - **Kind:** Secret text
-   - **Scope:** Global
-   - **Secret:** `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-   - **ID:** `snyk-token`
-   - **Description:** Snyk API Token
-
----
-
-###  Jenkins Credentials Summary
-
-After setup, you should have these 4 credentials in Jenkins:
-
-| ID | Kind | Description |
-|----|------|-------------|
-| `aws-credentials` | Username with password | AWS Access Key (username) + Secret Key (password) |
-| `sonarqube-url` | Secret text | SonarQube server URL |
-| `sonarqube-token` | Secret text | SonarQube authentication token |
-| `snyk-token` | Secret text | Snyk API token |
-
-**Verify in Jenkins:**
-1. Go to **Manage Jenkins** → **Credentials** → **System** → **Global credentials**
-2. You should see all 4 credentials listed
-
----
-
-##  Step-by-Step Setup
-
-### Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/viateur-amalitech/jenkins-pipeline.git
-cd jenkins-pipeline
-```
-
-### Step 2: Configure AWS CLI
-
-```bash
-aws configure
-```
-
-Enter:
-- **AWS Access Key ID:** Your access key
-- **AWS Secret Access Key:** Your secret key
-- **Default region:** `eu-north-1`
-- **Default output format:** `json`
-
-Verify:
-```bash
-aws sts get-caller-identity
-# Should show your account ID
-```
-
-### Step 3: Setup Terraform Backend
-
-```bash
-# Make scripts executable
-chmod +x scripts/*.sh
-
-# Setup backend (creates S3 bucket + DynamoDB table)
-./scripts/setup-backend.sh --region eu-north-1 --project secure-webapp
-```
-
-Expected output:
-```
-============================================
-Terraform Backend Setup
-============================================
-
-AWS Account ID: 123456789012
-AWS Region:     eu-north-1
-Project Name:   secure-webapp
-S3 Bucket:      secure-webapp-tfstate-123456789012
-DynamoDB Table: secure-webapp-tf-locks
-
-Creating S3 bucket for Terraform state...
-✓ S3 bucket created
-✓ Versioning enabled
-✓ Encryption enabled
-✓ Public access blocked
-Creating DynamoDB table for state locking...
-✓ DynamoDB table created
-
-============================================
-Backend setup complete!
-============================================
-```
-
-### Step 4: Deploy Infrastructure
-
-```bash
-# Deploy dev environment
-./scripts/deploy-infrastructure.sh --environment dev --auto-approve
-```
-
-This creates:
-- VPC with public/private subnets
-- ECR repository
-- ECS Cluster (Fargate)
-- Application Load Balancer
-- IAM roles
-- CloudWatch log groups
-
-**Note the outputs** (you'll need these):
-```
-ecr_repository_url = "123456789012.dkr.ecr.eu-north-1.amazonaws.com/secure-webapp"
-ecs_cluster_name = "secure-webapp-dev-cluster"
-ecs_service_name = "secure-webapp-dev-service"
-alb_dns_name = "secure-webapp-dev-alb-123456789.eu-north-1.elb.amazonaws.com"
-```
-
-### Step 5: Install Jenkins Plugins
-
-In Jenkins UI:
-1. Go to **Manage Jenkins** → **Plugins** → **Available plugins**
-2. Search and install:
-   - ✅ Docker Pipeline
-   - ✅ Pipeline: AWS Steps
-   - ✅ SonarQube Scanner
-   - ✅ Credentials Binding
-   - ✅ Pipeline Utility Steps
-3. Click **Install** and restart Jenkins
-
-### Step 6: Add Credentials to Jenkins
-
-Follow the [All Required Credentials](#-all-required-credentials) section above to add:
-- `aws-credentials`
-- `sonarqube-url`
-- `sonarqube-token`
-- `snyk-token`
-
-### Step 7: Create Jenkins Pipeline Job
-
-1. Click **New Item**
-2. Enter name: `secure-webapp-pipeline`
-3. Select **Pipeline** → Click **OK**
-4. Configure:
-   - **General:**
-     - ✅ Do not allow concurrent builds
-   - **Pipeline:**
-     - Definition: **Pipeline script from SCM**
-     - SCM: **Git**
-     - Repository URL: `https://github.com/viateur-amalitech/jenkins-pipeline.git`
-     - Branch: `*/main`
-     - Script Path: `Jenkinsfile`
-5. Click **Save**
-
----
-
-##  Running the Pipeline
-
-### First Run (Setup Infrastructure via Pipeline)
-
-1. Go to your pipeline job
-2. Click **Build with Parameters**
-3. Set parameters:
-   - `AWS_REGION`: `eu-north-1`
-   - `PROJECT_NAME`: `secure-webapp`
-   - `ENVIRONMENT`: `dev`
-   - `SETUP_BACKEND`: ✅ (check this)
-   - `DEPLOY_INFRASTRUCTURE`: ✅ (check this)
-4. Click **Build**
-
-### Subsequent Runs (Deploy Application Only)
-
-1. Click **Build with Parameters**
-2. Set parameters:
-   - `AWS_REGION`: `eu-north-1`
-   - `PROJECT_NAME`: `secure-webapp`
-   - `ENVIRONMENT`: `dev`
-   - `SETUP_BACKEND`: ❌ (uncheck)
-   - `DEPLOY_INFRASTRUCTURE`: ❌ (uncheck)
-3. Click **Build**
-
-### Pipeline Stages
-
-| Stage | Description | Duration |
-|-------|-------------|----------|
-| Validate Parameters | Auto-detects AWS Account ID, generates names | ~5s |
-| Initialize | Creates report directories | ~2s |
-| Setup Backend | Creates S3 + DynamoDB (if enabled) | ~30s |
-| Deploy Infrastructure | Runs Terraform (if enabled) | ~3-5min |
-| Checkout | Clones repository | ~10s |
-| Install Dependencies | `npm ci` | ~30s |
-| Security Scans | Gitleaks, SonarQube, Snyk (parallel) | ~2min |
-| Unit Tests | `npm test` | ~30s |
-| Quality Gate | Waits for SonarQube analysis | ~1min |
-| Security Gate | Fails if vulnerabilities found | ~5s |
-| Docker Build | Builds container image | ~1min |
-| Container Security | Trivy scan + SBOM generation (parallel) | ~2min |
-| Container Gate | Fails if critical vulnerabilities | ~5s |
-| Push to ECR | Pushes image to registry | ~1min |
-| Deploy to ECS | Updates ECS service | ~30s |
-| Wait for Deployment | Waits for healthy deployment | ~5min |
-| Cleanup | Removes local images | ~10s |
-
-**Total Time:** ~15-20 minutes (first run with infrastructure)
-
----
-
-##  Testing the Application
-
-### 1. Get the Application URL
-
-```bash
-# From Terraform output
-./scripts/deploy-infrastructure.sh --environment dev --action output
-
-# Or via AWS CLI
-aws elbv2 describe-load-balancers \
-  --query 'LoadBalancers[?contains(LoadBalancerName, `secure-webapp`)].DNSName' \
-  --output text
-```
-
-### 2. Test the Endpoints
-
-```bash
-# Set the ALB URL
-export ALB_URL="secure-webapp-dev-alb-123456789.eu-north-1.elb.amazonaws.com"
-
-# Test root endpoint
-curl http://${ALB_URL}/
-# Expected: {"message":"Hello from secure-webapp!","version":"v1-abc1234","environment":"production"}
-
-# Test health check
-curl http://${ALB_URL}/health
-# Expected: {"status":"healthy"}
-
-# Test users endpoint (if MongoDB is configured)
-curl http://${ALB_URL}/users
-# Expected: {"users":[]} or list of users
-```
-
-### 3. Check AWS Console
-
-- **ECS:** Check service running with desired count
-- **CloudWatch:** Check logs at `/ecs/secure-webapp-dev-service`
-- **ECR:** Verify images pushed with correct tags
-
----
-
-##  Security Gate Testing
-
-### Test 1: Vulnerable Dependency (Snyk)
-
-```bash
-# Add vulnerable package
-echo '{"dependencies":{"lodash":"4.17.15"}}' > test-package.json
-
-# Edit package.json to include vulnerable lodash
-# Then commit and push
-```
-
-**Expected:** Pipeline fails at **Security Gate** with "High/Critical vulnerabilities found"
-
-### Test 2: Secret Detection (Gitleaks)
-
-```bash
-# Add a secret to any file (DON'T COMMIT TO REAL REPO!)
-echo 'const AWS_KEY = "AKIAIOSFODNN7EXAMPLE";' >> temp-test.js
-
-# Commit and push
-```
-
-**Expected:** Pipeline fails at **Security Gate** with "Secrets detected in code"
-
-### Test 3: Container Vulnerabilities (Trivy)
-
-```bash
-# Use a vulnerable base image in Dockerfile
-# Change: FROM node:18-alpine
-# To:     FROM node:14-alpine (older, has vulnerabilities)
-```
-
-**Expected:** Pipeline fails at **Container Gate** with "Critical/High vulnerabilities in image"
-
-### Test 4: Skip Security Gates (Emergency)
-
-Run pipeline with:
-- `SKIP_SECURITY_GATES`: ✅ (checked)
-
-**Expected:** Pipeline continues despite vulnerabilities (use with caution!)
-
----
-
-## 🔧Troubleshooting
-
-### Issue: "AWS Account ID not detected"
-
-**Solution:**
-```bash
-# Verify AWS credentials
-aws sts get-caller-identity
-
-# If error, reconfigure
-aws configure
-```
-
-### Issue: "Backend bucket not found"
-
-**Solution:**
-```bash
-# Run setup script
-./scripts/setup-backend.sh --region eu-north-1 --project secure-webapp
-
-# Verify bucket exists
-aws s3 ls | grep tfstate
-```
-
-### Issue: "ECR authentication failed"
-
-**Solution:**
-```bash
-# Login to ECR manually
-aws ecr get-login-password --region eu-north-1 | \
-  docker login --username AWS --password-stdin \
-  123456789012.dkr.ecr.eu-north-1.amazonaws.com
-```
-
-### Issue: "ECS service not stable"
-
-**Solution:**
-```bash
-# Check service events
-aws ecs describe-services \
-  --cluster secure-webapp-dev-cluster \
-  --services secure-webapp-dev-service \
-  --query 'services[0].events[0:5]'
-
-# Check task logs
-aws logs get-log-events \
-  --log-group-name /ecs/secure-webapp-dev-service \
-  --log-stream-name $(aws logs describe-log-streams \
-    --log-group-name /ecs/secure-webapp-dev-service \
-    --order-by LastEventTime --descending \
-    --query 'logStreams[0].logStreamName' --output text) \
-  --limit 50
-```
-
-### Issue: "SonarQube connection failed"
-
-**Solution:**
-1. Verify URL is correct in Jenkins credentials
-2. Verify token is valid
-3. For SonarCloud, ensure organization exists
-4. Check network connectivity to SonarQube server
-
-### Issue: "Snyk authentication failed"
-
-**Solution:**
-1. Regenerate token at [snyk.io](https://snyk.io)
-2. Update `snyk-token` credential in Jenkins
-3. Verify token works:
-```bash
-SNYK_TOKEN=your-token snyk auth
-```
-
----
-
-##  Cleanup
-
-### Step 1: Destroy Application Infrastructure
-
-```bash
-# Destroy dev environment
-./scripts/deploy-infrastructure.sh --environment dev --action destroy --auto-approve
-
-# Destroy prod environment (if created)
-./scripts/deploy-infrastructure.sh --environment prod --action destroy --auto-approve
-```
-
-### Step 2: Destroy Terraform Backend
-
-```bash
-# This permanently deletes state files!
-./scripts/destroy-backend.sh --force
-```
-
-### Step 3: Clean Up Jenkins
-
-1. Delete the pipeline job
-2. Remove credentials (optional)
-
-### Step 4: Clean Up Docker (Local)
-
-```bash
-# Remove images
-docker rmi $(docker images | grep secure-webapp | awk '{print $3}')
-
-# Prune system
-docker system prune -af
-```
-
----
-
-## Architecture Diagram
+Check out the official [Gitleaks GitHub Action](https://github.com/gitleaks/gitleaks-action)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              CI/CD PIPELINE ARCHITECTURE                             │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│   ┌──────────┐     ┌──────────┐     ┌─────────────────────────────────────────┐     │
-│   │  GitHub  │────►│ Jenkins  │────►│           Security Scans                │     │
-│   │   Repo   │     │ Pipeline │     │  ┌─────────┬───────────┬─────────┐      │     │
-│   └──────────┘     └──────────┘     │  │Gitleaks │ SonarQube │  Snyk   │      │     │
-│                                      │  │(Secrets)│  (SAST)   │  (SCA)  │      │     │
-│                                      │  └────┬────┴─────┬─────┴────┬────┘      │     │
-│                                      └───────┼──────────┼──────────┼───────────┘     │
-│                                              │          │          │                 │
-│                                              ▼          ▼          ▼                 │
-│                                      ┌─────────────────────────────────┐             │
-│                                      │      SECURITY GATE (PASS/FAIL)  │             │
-│                                      └──────────────┬──────────────────┘             │
-│                                                     │                                │
-│                                                     ▼                                │
-│   ┌────────────────────────────────────────────────────────────────────────────┐    │
-│   │                           Container Build & Scan                            │    │
-│   │  ┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐   │    │
-│   │  │   Docker   │────►│   Trivy    │────►│    Syft    │────►│ Container  │   │    │
-│   │  │   Build    │     │   Scan     │     │   (SBOM)   │     │   Gate     │   │    │
-│   │  └────────────┘     └────────────┘     └────────────┘     └──────┬─────┘   │    │
-│   └──────────────────────────────────────────────────────────────────┼─────────┘    │
-│                                                                       │              │
-│                                                                       ▼              │
-│   ┌────────────────────────────────────────────────────────────────────────────┐    │
-│   │                              AWS Deployment                                 │    │
-│   │  ┌────────────┐     ┌────────────┐     ┌────────────┐     ┌────────────┐   │    │
-│   │  │    ECR     │────►│    ECS     │────►│    ALB     │────►│ CloudWatch │   │    │
-│   │  │   Push     │     │  Fargate   │     │            │     │    Logs    │   │    │
-│   │  └────────────┘     └────────────┘     └────────────┘     └────────────┘   │    │
-│   └────────────────────────────────────────────────────────────────────────────┘    │
-│                                                                                      │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+name: gitleaks
+on: [pull_request, push, workflow_dispatch]
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE}} # Only required for Organizations, not personal accounts.
 ```
 
----
+### Pre-Commit
 
-##  Quick Reference
+1. Install pre-commit from https://pre-commit.com/#install
+2. Create a `.pre-commit-config.yaml` file at the root of your repository with the following content:
 
-### Jenkins Credentials
+   ```
+   repos:
+     - repo: https://github.com/gitleaks/gitleaks
+       rev: v8.16.1
+       hooks:
+         - id: gitleaks
+   ```
 
-| ID | Kind | Value |
-|----|------|-------|
-| `aws-credentials` | Username/Password | AWS Access Key / Secret Key |
-| `sonarqube-url` | Secret text | `https://sonarcloud.io` or your server |
-| `sonarqube-token` | Secret text | SonarQube API token |
-| `snyk-token` | Secret text | Snyk API token |
+   for a [native execution of GitLeaks](https://github.com/zricethezav/gitleaks/releases) or use the [`gitleaks-docker` pre-commit ID](https://github.com/zricethezav/gitleaks/blob/master/.pre-commit-hooks.yaml) for executing GitLeaks using the [official Docker images](#docker)
 
-### Pipeline Parameters
+3. Auto-update the config to the latest repos' versions by executing `pre-commit autoupdate`
+4. Install with `pre-commit install`
+5. Now you're all set!
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `AWS_REGION` | `eu-north-1` | AWS region |
-| `PROJECT_NAME` | `secure-webapp` | Project name |
-| `ENVIRONMENT` | `dev` | dev or prod |
-| `SETUP_BACKEND` | `false` | Create Terraform backend |
-| `DEPLOY_INFRASTRUCTURE` | `false` | Deploy Terraform |
-| `SKIP_SECURITY_GATES` | `false` | Skip security checks |
+```
+➜ git commit -m "this commit contains a secret"
+Detect hardcoded secrets.................................................Failed
+```
 
-### Scripts
+Note: to disable the gitleaks pre-commit hook you can prepend `SKIP=gitleaks` to the commit command
+and it will skip running gitleaks
 
-| Script | Purpose |
-|--------|---------|
-| `./scripts/setup-backend.sh` | Create S3 + DynamoDB for Terraform |
-| `./scripts/deploy-infrastructure.sh` | Deploy Terraform infrastructure |
-| `./scripts/get-backend-config.sh` | Get backend configuration values |
-| `./scripts/destroy-backend.sh` | Destroy backend resources |
+```
+➜ SKIP=gitleaks git commit -m "skip gitleaks check"
+Detect hardcoded secrets................................................Skipped
+```
 
----
+## Usage
 
-## 📞 Support
+```
+Usage:
+  gitleaks [command]
 
-For issues:
-1. Check [Troubleshooting](#-troubleshooting) section
-2. Check Jenkins build logs
-3. Check AWS CloudWatch logs
-4. Open an issue on GitHub
+Available Commands:
+  completion  generate the autocompletion script for the specified shell
+  detect      detect secrets in code
+  help        Help about any command
+  protect     protect secrets in code
+  version     display gitleaks version
+
+Flags:
+  -b, --baseline-path string       path to baseline with issues that can be ignored
+  -c, --config string              config file path
+                                   order of precedence:
+                                   1. --config/-c
+                                   2. env var GITLEAKS_CONFIG
+                                   3. (--source/-s)/.gitleaks.toml
+                                   If none of the three options are used, then gitleaks will use the default config
+      --exit-code int              exit code when leaks have been encountered (default 1)
+  -h, --help                       help for gitleaks
+  -l, --log-level string           log level (trace, debug, info, warn, error, fatal) (default "info")
+      --max-target-megabytes int   files larger than this will be skipped
+      --no-color                   turn off color for verbose output
+      --no-banner                  suppress banner
+      --redact                     redact secrets from logs and stdout
+  -f, --report-format string       output format (json, csv, junit, sarif) (default "json")
+  -r, --report-path string         report file
+  -s, --source string              path to source (default ".")
+  -v, --verbose                    show verbose output from scan
+
+Use "gitleaks [command] --help" for more information about a command.
+```
+
+### Commands
+
+There are two commands you will use to detect secrets; `detect` and `protect`.
+
+#### Detect
+
+The `detect` command is used to scan repos, directories, and files. This command can be used on developer machines and in CI environments.
+
+When running `detect` on a git repository, gitleaks will parse the output of a `git log -p` command (you can see how this executed
+[here](https://github.com/zricethezav/gitleaks/blob/7240e16769b92d2a1b137c17d6bf9d55a8562899/git/git.go#L17-L25)).
+[`git log -p` generates patches](https://git-scm.com/docs/git-log#_generating_patch_text_with_p) which gitleaks will use to detect secrets.
+You can configure what commits `git log` will range over by using the `--log-opts` flag. `--log-opts` accepts any option for `git log -p`.
+For example, if you wanted to run gitleaks on a range of commits you could use the following command: `gitleaks detect --source . --log-opts="--all commitA..commitB"`.
+See the `git log` [documentation](https://git-scm.com/docs/git-log) for more information.
+
+You can scan files and directories by using the `--no-git` option.
+
+#### Protect
+
+The `protect` command is used to scan uncommitted changes in a git repo. This command should be used on developer machines in accordance with
+[shifting left on security](https://cloud.google.com/architecture/devops/devops-tech-shifting-left-on-security).
+When running `protect` on a git repository, gitleaks will parse the output of a `git diff` command (you can see how this executed
+[here](https://github.com/zricethezav/gitleaks/blob/7240e16769b92d2a1b137c17d6bf9d55a8562899/git/git.go#L48-L49)). You can set the
+`--staged` flag to check for changes in commits that have been `git add`ed. The `--staged` flag should be used when running Gitleaks
+as a pre-commit.
+
+**NOTE**: the `protect` command can only be used on git repos, running `protect` on files or directories will result in an error message.
+
+### Creating a baseline
+
+When scanning large repositories or repositories with a long history, it can be convenient to use a baseline. When using a baseline,
+gitleaks will ignore any old findings that are present in the baseline. A baseline can be any gitleaks report. To create a gitleaks report, run gitleaks with the `--report-path` parameter.
+
+```
+gitleaks detect --report-path gitleaks-report.json # This will save the report in a file called gitleaks-report.json
+```
+
+Once as baseline is created it can be applied when running the detect command again:
+
+```
+gitleaks detect --baseline-path gitleaks-report.json --report-path findings.json
+```
+
+After running the detect command with the --baseline-path parameter, report output (findings.json) will only contain new issues.
+
+### Verify Findings
+
+You can verify a finding found by gitleaks using a `git log` command.
+Example output:
+
+```
+Finding:     aws_secret="AKIAIMNOJVGFDXXXE4OA"
+RuleID:      aws-access-token
+Secret       AKIAIMNOJVGFDXXXE4OA
+Entropy:     3.65
+File:        checks_test.go
+Line:        37
+Commit:      ec2fc9d6cb0954fb3b57201cf6133c48d8ca0d29
+Author:      Zachary Rice
+Email:       z@email.com
+Date:        2018-01-28T17:39:00Z
+Fingerprint: ec2fc9d6cb0954fb3b57201cf6133c48d8ca0d29:checks_test.go:aws-access-token:37
+```
+
+We can use the following format to verify the leak:
+
+```
+git log -L {StartLine,EndLine}:{File} {Commit}
+```
+
+So in this example it would look like:
+
+```
+git log -L 37,37:checks_test.go ec2fc9d6cb0954fb3b57201cf6133c48d8ca0d29
+```
+
+Which gives us:
+
+```
+commit ec2fc9d6cb0954fb3b57201cf6133c48d8ca0d29
+Author: zricethezav <thisispublicanyways@gmail.com>
+Date:   Sun Jan 28 17:39:00 2018 -0500
+
+    [update] entropy check
+
+diff --git a/checks_test.go b/checks_test.go
+--- a/checks_test.go
++++ b/checks_test.go
+@@ -28,0 +37,1 @@
++               "aws_secret= \"AKIAIMNOJVGFDXXXE4OA\"":          true,
+
+```
+
+## Pre-Commit hook
+
+You can run Gitleaks as a pre-commit hook by copying the example `pre-commit.py` script into
+your `.git/hooks/` directory.
+
+## Configuration
+
+Gitleaks offers a configuration format you can follow to write your own secret detection rules:
+
+```toml
+# Title for the gitleaks configuration file.
+title = "Gitleaks title"
+
+# Extend the base (this) configuration. When you extend a configuration
+# the base rules take precedence over the extended rules. I.e., if there are
+# duplicate rules in both the base configuration and the extended configuration
+# the base rules will override the extended rules.
+# Another thing to know with extending configurations is you can chain together
+# multiple configuration files to a depth of 2. Allowlist arrays are appended
+# and can contain duplicates.
+# useDefault and path can NOT be used at the same time. Choose one.
+[extend]
+# useDefault will extend the base configuration with the default gitleaks config:
+# https://github.com/zricethezav/gitleaks/blob/master/config/gitleaks.toml
+useDefault = true
+# or you can supply a path to a configuration. Path is relative to where gitleaks
+# was invoked, not the location of the base config.
+path = "common_config.toml"
+
+# An array of tables that contain information that define instructions
+# on how to detect secrets
+[[rules]]
+
+# Unique identifier for this rule
+id = "awesome-rule-1"
+
+# Short human readable description of the rule.
+description = "awesome rule 1"
+
+# Golang regular expression used to detect secrets. Note Golang's regex engine
+# does not support lookaheads.
+regex = '''one-go-style-regex-for-this-rule'''
+
+# Golang regular expression used to match paths. This can be used as a standalone rule or it can be used
+# in conjunction with a valid `regex` entry.
+path = '''a-file-path-regex'''
+
+# Array of strings used for metadata and reporting purposes.
+tags = ["tag","another tag"]
+
+# Int used to extract secret from regex match and used as the group that will have
+# its entropy checked if `entropy` is set.
+secretGroup = 3
+
+# Float representing the minimum shannon entropy a regex group must have to be considered a secret.
+entropy = 3.5
+
+# Keywords are used for pre-regex check filtering. Rules that contain
+# keywords will perform a quick string compare check to make sure the
+# keyword(s) are in the content being scanned. Ideally these values should
+# either be part of the idenitifer or unique strings specific to the rule's regex
+# (introduced in v8.6.0)
+keywords = [
+  "auth",
+  "password",
+  "token",
+]
+
+# You can include an allowlist table for a single rule to reduce false positives or ignore commits
+# with known/rotated secrets
+[rules.allowlist]
+description = "ignore commit A"
+commits = [ "commit-A", "commit-B"]
+paths = [
+  '''go\.mod''',
+  '''go\.sum'''
+]
+# note: (rule) regexTarget defaults to check the _Secret_ in the finding.
+# if regexTarget is not specified then _Secret_ will be used.
+# Acceptable values for regexTarget are "match" and "line"
+regexTarget = "match"
+regexes = [
+  '''process''',
+  '''getenv''',
+]
+# note: stopwords targets the extracted secret, not the entire regex match
+# like 'regexes' does. (stopwords introduced in 8.8.0)
+stopwords = [
+  '''client''',
+  '''endpoint''',
+]
+
+
+# This is a global allowlist which has a higher order of precedence than rule-specific allowlists.
+# If a commit listed in the `commits` field below is encountered then that commit will be skipped and no
+# secrets will be detected for said commit. The same logic applies for regexes and paths.
+[allowlist]
+description = "global allow list"
+commits = [ "commit-A", "commit-B", "commit-C"]
+paths = [
+  '''gitleaks\.toml''',
+  '''(.*?)(jpg|gif|doc)'''
+]
+
+# note: (global) regexTarget defaults to check the _Secret_ in the finding.
+# if regexTarget is not specified then _Secret_ will be used.
+# Acceptable values for regexTarget are "match" and "line"
+regexTarget = "match"
+
+regexes = [
+  '''219-09-9999''',
+  '''078-05-1120''',
+  '''(9[0-9]{2}|666)-\d{2}-\d{4}''',
+]
+# note: stopwords targets the extracted secret, not the entire regex match
+# like 'regexes' does. (stopwords introduced in 8.8.0)
+stopwords = [
+  '''client''',
+  '''endpoint''',
+]
+```
+
+Refer to the default [gitleaks config](https://github.com/zricethezav/gitleaks/blob/master/config/gitleaks.toml) for examples or follow the [contributing guidelines](https://github.com/zricethezav/gitleaks/blob/master/README.md) if you would like to contribute to the default configuration. Additionally, you can check out [this gitleaks blog post](https://blog.gitleaks.io/stop-leaking-secrets-configuration-2-3-aeed293b1fbf) which covers advanced configuration setups.
+
+### Additional Configuration
+
+#### gitleaks:allow
+
+If you are knowingly committing a test secret that gitleaks will catch you can add a `gitleaks:allow` comment to that line which will instruct gitleaks
+to ignore that secret. Ex:
+
+```
+class CustomClass:
+    discord_client_secret = '8dyfuiRyq=vVc3RRr_edRk-fK__JItpZ'  #gitleaks:allow
+
+```
+
+#### .gitleaksignore
+
+You can ignore specific findings by creating a `.gitleaksignore` file at the root of your repo. In release v8.10.0 Gitleaks added a `Fingerprint` value to the Gitleaks report. Each leak, or finding, has a Fingerprint that uniquely identifies a secret. Add this fingerprint to the `.gitleaksignore` file to ignore that specific secret. See Gitleaks' [.gitleaksignore](https://github.com/zricethezav/gitleaks/blob/master/.gitleaksignore) for an example. Note: this feature is experimental and is subject to change in the future.
+
+## Sponsorships
+
+<p align="left">
+	  <a href="https://www.tines.com/?utm_source=oss&utm_medium=sponsorship&utm_campaign=gitleaks">
+		  <img alt="Tines Sponsorship" src="https://user-images.githubusercontent.com/15034943/146411864-4878f936-b4f7-49a0-b625-f9f40c704bfa.png" width=200>
+	  </a>
+  </p>
+
+## Exit Codes
+
+You can always set the exit code when leaks are encountered with the --exit-code flag. Default exit codes below:
+
+```
+0 - no leaks present
+1 - leaks or error encountered
+126 - unknown flag
+```

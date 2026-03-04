@@ -141,7 +141,7 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm ci'
+                sh 'npm ci --no-audit --no-fund'
             }
         }
 

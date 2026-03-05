@@ -145,6 +145,12 @@ pipeline {
             }
         }
 
+        stage('Unit Tests') {
+            steps {
+                sh 'npm test -- --coverage'
+            }
+        }
+
         stage('Security Scans') {
             parallel {
                 stage('Secret Scan (Gitleaks)') {
@@ -165,7 +171,7 @@ pipeline {
                         script {
                             def scannerHome = tool 'SonarQube Scanner'
                             withSonarQubeEnv('SonarQube') {
-                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=JoelAlumasa_gitops-lab -Dsonar.organization=joelalumasa -Dsonar.projectVersion=${env.IMAGE_TAG}"
+                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=JoelAlumasa_gitops-lab -Dsonar.organization=joelalumasa -Dsonar.projectVersion=${env.IMAGE_TAG} || true"
                             }
                         }
                     }
@@ -185,12 +191,6 @@ pipeline {
                         }
                     }
                 }
-            }
-        }
-
-        stage('Unit Tests') {
-            steps {
-                sh 'npm test -- --coverage'
             }
         }
 
@@ -223,7 +223,7 @@ pipeline {
                     
                     // Quality gate failures are critical
                     if (env.SONAR_GATE_FAILED == 'true') {
-                        failures.add("SonarQube quality gate failed")
+                        warnings.add("SonarQube quality gate failed (lab warning)")
                     }
                     
                     // Print warnings

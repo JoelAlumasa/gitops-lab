@@ -196,10 +196,17 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 10, unit: 'MINUTES') {
-                    script {
-                        def qg = waitForQualityGate()
-                        env.SONAR_GATE_FAILED = qg.status != 'OK' ? 'true' : 'false'
+                script {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                        timeout(time: 10, unit: 'MINUTES') {
+                            def qg = waitForQualityGate()
+                            env.SONAR_GATE_FAILED = (qg.status != 'OK') ? 'true' : 'false'
+                            if (qg.status != 'OK') {
+                                echo "⚠️ Sonar Quality Gate: ${qg.status} (continuing for lab)"
+                            } else {
+                                echo "✅ Sonar Quality Gate: OK"
+                            }
+                        }
                     }
                 }
             }

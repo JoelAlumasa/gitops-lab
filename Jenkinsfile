@@ -165,7 +165,7 @@ pipeline {
                         script {
                             def scannerHome = tool 'SonarQube Scanner'
                             withSonarQubeEnv('SonarQube') {
-                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=secure-webapp -Dsonar.organization=joelalumasa -Dsonar.projectVersion=${env.IMAGE_TAG}"
+                                sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=JoelAlumasa_gitops-lab -Dsonar.organization=joelalumasa -Dsonar.projectVersion=${env.IMAGE_TAG}"
                             }
                         }
                     }
